@@ -2,7 +2,8 @@
 <html lang="th">
 <head>
   <meta charset="UTF-8">
-  <title>Live 60-Item OMR Camera Scanner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Live 60-Item OMR Scanner</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -10,147 +11,132 @@
       display: flex; flex-direction: column; min-height: 100vh;
     }
     .header {
-      padding: 12px; background: #1e293b; text-align: center; border-bottom: 1px solid #334155;
+      padding: 10px; background: #1e293b; text-align: center; border-bottom: 1px solid #334155;
     }
-    h2 { margin: 0 0 4px 0; font-size: 1.25rem; color: #34d399; }
-    p { margin: 0; font-size: 0.85rem; color: #94a3b8; }
+    h2 { margin: 0; font-size: 1.1rem; color: #34d399; }
+    p { margin: 2px 0 0 0; font-size: 0.75rem; color: #94a3b8; }
     
     .scanner-container {
-      position: relative; width: 100%; max-width: 540px; margin: 0 auto; flex: 1;
-      display: flex; flex-direction: column; justify-content: flex-start;
+      position: relative; width: 100%; max-width: 500px; margin: 0 auto; flex: 1;
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      background: #000; overflow: hidden;
     }
-    video { display: none; } /* Hidden, we read frame data via RequestAnimationFrame */
-    canvas#interactiveCanvas {
-      width: 100%; height: auto; display: block; border-bottom: 4px solid #10b981;
+    video { display: none; }
+    canvas#viewCanvas {
+      width: 100%; height: auto; display: block; max-height: 70vh; object-fit: contain;
     }
     
     .status-overlay {
       position: absolute; top: 10px; left: 10px; right: 10px;
-      padding: 8px 12px; background: rgba(15, 23, 42, 0.85); border-radius: 6px;
-      border: 1px solid #334155; font-size: 0.85rem; font-weight: bold;
+      padding: 8px 12px; background: rgba(15, 23, 42, 0.88); border-radius: 6px;
+      border: 1px solid #334155; font-size: 0.8rem; font-weight: bold;
       display: flex; justify-content: space-between; align-items: center; z-index: 10;
     }
-    .status-indicator { display: inline-flex; align-items: center; gap: 6px; }
-    .pulse-dot { width: 8px; height: 8px; background: #ef4444; border-radius: 50%; }
-    .pulse-dot.active { background: #10b981; animation: pulse 1.5s infinite; }
-    
-    @keyframes pulse {
-      0% { transform: scale(0.9); opacity: 0.5; }
-      50% { transform: scale(1.1); opacity: 1; }
-      100% { transform: scale(0.9); opacity: 0.5; }
-    }
+    .pulse-dot { width: 8px; height: 8px; background: #ef4444; border-radius: 50%; display: inline-block; margin-right: 6px; }
+    .pulse-dot.active { background: #10b981; }
 
     .live-grade-overlay {
-      position: absolute; bottom: 80px; left: 10px; right: 10px;
-      background: rgba(16, 185, 129, 0.95); color: #ffffff;
-      padding: 14px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-      backdrop-filter: blur(4px); text-align: center; border: 1px solid #34d399;
-      display: none; z-index: 20;
+      position: absolute; bottom: 20px; left: 15px; right: 15px;
+      background: rgba(6, 78, 59, 0.95); color: #ffffff;
+      padding: 16px; border-radius: 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.6);
+      border: 2px solid #34d399; display: none; z-index: 20; text-align: center;
     }
-    .grade-score { font-size: 2rem; font-weight: 800; line-height: 1; margin-bottom: 4px; }
-    .grade-percent { font-size: 0.9rem; font-weight: 500; opacity: 0.9; }
+    .grade-score { font-size: 2.2rem; font-weight: 800; line-height: 1; }
+    .grade-percent { font-size: 1rem; margin-top: 4px; font-weight: 600; color: #a7f3d0; }
 
     .controls-footer {
       padding: 12px; background: #1e293b; display: flex; gap: 8px; justify-content: center;
     }
     .btn {
       background: #10b981; color: white; border: none; padding: 10px 16px;
-      border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.9rem;
+      border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.85rem;
     }
     .btn:hover { background: #059669; }
     .btn-sec { background: #475569; }
-    .btn-sec:hover { background: #334155; }
 
-    /* Hide OMR key drawer */
     #keyPanel {
       position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #0f172a;
       z-index: 100; display: none; flex-direction: column; padding: 16px;
     }
     .key-grid {
-      display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; overflow-y: auto; flex: 1; margin: 12px 0;
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; overflow-y: auto; flex: 1; margin: 10px 0;
     }
     .key-row {
       display: flex; align-items: center; justify-content: space-between;
-      background: #1e293b; padding: 6px; border-radius: 4px; font-size: 0.85rem;
+      background: #1e293b; padding: 6px; border-radius: 4px; font-size: 0.8rem;
     }
     .key-btns button {
-      width: 20px; height: 20px; border: 1px solid #64748b; background: #334155; color: #fff;
-      border-radius: 3px; cursor: pointer; margin-left: 1px; font-size: 0.7rem; font-weight: bold;
+      width: 22px; height: 22px; border: 1px solid #64748b; background: #334155; color: #fff;
+      border-radius: 3px; cursor: pointer; margin-left: 1px; font-size: 0.75rem;
     }
     .key-btns button.active { background: #10b981; border-color: #10b981; }
 
-    /* For capturing snapshot */
     #hiddenWarpedCanvas { display: none; }
   </style>
 
-  <!-- Load OpenCV.js (WebAssembly) from unpkg CDN for high-speed live image processing -->
-  <script async src="https://unpkg.com/opencv.js@4.5.5/opencv.js" onload="onOpenCvReady()"></script>
+  <script async src="https://unpkg.com/opencv.js@4.5.5/opencv.js" onload="onOpenCvLoaded()"></script>
 </head>
 <body>
 
   <div class="header">
     <h2>60-Item Live OMR Scanner</h2>
-    <p>จัดแนวเครื่องหมาย 4 มุมในกรอบเพื่อตรวจคำตอบ (Align the 4 corner markers to scan)</p>
+    <p>Hold sheet flat. Green squares = detected markers.</p>
   </div>
 
   <div class="scanner-container">
-    <!-- Overlay banner tracking camera & alignment state -->
     <div class="status-overlay">
-      <div class="status-indicator">
-        <div class="pulse-dot" id="stateDot"></div>
-        <span id="stateText">Loading Computer Vision...</span>
+      <div>
+        <span class="pulse-dot" id="stateDot"></span>
+        <span id="stateText">Loading OpenCV...</span>
       </div>
-      <button class="btn btn-sec" style="font-size:0.75rem; padding: 4px 8px;" id="toggleCameraBtn">สลับกล้อง</button>
+      <button class="btn btn-sec" style="padding: 4px 8px; font-size:0.75rem;" id="toggleCameraBtn">Flip Cam</button>
     </div>
 
-    <!-- Live overlay showing calculated grade -->
     <div class="live-grade-overlay" id="gradeOverlay">
-      <div class="grade-score" id="gradeScoreText">45/60</div>
-      <div class="grade-percent" id="gradePercentText">75% (ผ่าน / Passed)</div>
-      <div style="font-size: 0.7rem; margin-top: 4px; opacity: 0.8;">ดึงกล้องออกเพื่อเคลียร์ / Remove camera to clear</div>
+      <div class="grade-score" id="gradeScoreText">-- / 60</div>
+      <div class="grade-percent" id="gradePercentText">--%</div>
+      <button class="btn" style="margin-top: 10px; background: #047857;" onclick="dismissResult()">Scan Next Sheet</button>
     </div>
 
-    <!-- Camera stream sources -->
     <video id="videoElement" autoplay playsinline muted></video>
-    
-    <!-- Render canvas with interactive guide overlays -->
-    <canvas id="interactiveCanvas"></canvas>
-    
-    <!-- Virtual coordinate calibration reference (Internal) -->
+    <canvas id="viewCanvas"></canvas>
     <canvas id="hiddenWarpedCanvas" width="520" height="740"></canvas>
   </div>
 
   <div class="controls-footer">
-    <button class="btn" id="openKeyBtn">แก้ไขเฉลย (Answer Key)</button>
-    <button class="btn btn-sec" id="pauseScanBtn">Freeze</button>
+    <button class="btn" id="manualSnapBtn">Force Scan Frame</button>
+    <button class="btn btn-sec" id="openKeyBtn">Answer Key</button>
   </div>
 
-  <!-- Modal panel to adjust correct Answer Key -->
+  <!-- Key Setup Drawer -->
   <div id="keyPanel">
-    <h3 style="margin-top:0;">ตั้งค่าเฉลย (Answer Key)</h3>
-    <input type="text" id="quickKeyInput" placeholder="พาสท์เฉลย 60 ตัวอักษร เช่น ABCDE..." style="width:100%; padding:8px; margin-bottom:8px; border-radius:4px; border:1px solid #475569; background:#1e293b; color:white;">
-    <div style="display:flex; gap:8px;">
-      <button class="btn" onclick="applyQuickKey()">บันทึกพาสท์เร็ว (Save Quick String)</button>
-    </div>
+    <h3 style="margin:0 0 8px 0;">Teacher Answer Key (60 Items)</h3>
+    <input type="text" id="quickKeyInput" placeholder="Quick paste 60 letters (e.g. ABCDE...)" style="width:100%; padding:8px; border-radius:4px; border:1px solid #475569; background:#1e293b; color:white; box-sizing: border-box;">
+    <button class="btn" style="margin-top:6px;" onclick="applyQuickKey()">Apply Key</button>
     <div class="key-grid" id="keyGrid"></div>
-    <button class="btn" style="width:100%; margin-top:8px;" id="closeKeyBtn">เสร็จสิ้น (Done)</button>
+    <button class="btn" style="width:100%;" id="closeKeyBtn">Done</button>
   </div>
 
 <script>
 let video = document.getElementById('videoElement');
-let canvasEl = document.getElementById('interactiveCanvas');
+let canvasEl = document.getElementById('viewCanvas');
 let ctx = canvasEl.getContext('2d');
 let tempCanvas = document.getElementById('hiddenWarpedCanvas');
 let tempCtx = tempCanvas.getContext('2d');
 
-let isCameraRunning = false;
 let openCvReady = false;
-let currentStream = null;
-let currentFacingMode = "environment"; // default is back-facing camera
-let scanPaused = false;
-let trackingData = { detected: false, corners: [] };
+let currentFacingMode = "environment";
+let isScanningActive = true;
 
-// 60-Item coordinates map (Same math as A5 Sheet specs)
+// Internal fixed work buffer for OpenCV (640x480)
+const PROC_W = 640;
+const PROC_H = 480;
+let procCanvas = document.createElement('canvas');
+procCanvas.width = PROC_W;
+procCanvas.height = PROC_H;
+let procCtx = procCanvas.getContext('2d', { willReadFrequently: true });
+
+// 60-Item Coordinate System
 const TOTAL_QUESTIONS = 60;
 const OPTIONS = ['A', 'B', 'C', 'D', 'E'];
 const ITEMS_PER_COL = 15;
@@ -169,309 +155,249 @@ for (let q = 1; q <= TOTAL_QUESTIONS; q++) {
   const baseColX = COL_X[colIndex];
   const centerY = TOP_Y + HEADER_H + (rowIndex * ROW_H) + BOX_CENTER_Y_OFFSET;
 
-  BUBBLE_COORDINATES[q] = {
-    centerY: centerY,
-    options: {}
-  };
+  BUBBLE_COORDINATES[q] = { centerY: centerY, options: {} };
   OPTIONS.forEach((opt, idx) => {
     BUBBLE_COORDINATES[q].options[opt] = baseColX + OPT_OFFSET_X + (idx * OPT_STEP_X) + 6.5; 
   });
 }
 
-// Answer Key state with persist memory
 let ANSWER_KEY = JSON.parse(localStorage.getItem('omr_key_60') || '{}');
 if (Object.keys(ANSWER_KEY).length === 0) {
-  for (let i = 1; i <= TOTAL_QUESTIONS; i++) {
-    ANSWER_KEY[i] = OPTIONS[(i - 1) % 5];
-  }
+  for (let i = 1; i <= TOTAL_QUESTIONS; i++) ANSWER_KEY[i] = OPTIONS[(i - 1) % 5];
 }
 
-function onOpenCvReady() {
+function onOpenCvLoaded() {
   openCvReady = true;
-  updateStatus("พร้อมใช้งาน - กรุณาเปิดกล้อง", "active");
+  document.getElementById('stateText').textContent = "Starting Camera...";
   startCamera();
 }
 
-function updateStatus(msg, state) {
-  document.getElementById('stateText').textContent = msg;
-  const dot = document.getElementById('stateDot');
-  if (state === "active") {
-    dot.classList.add('active');
-  } else {
-    dot.classList.remove('active');
-  }
-}
-
-// Starts or shifts real-time high frame camera feed
 async function startCamera() {
-  if (currentStream) {
-    currentStream.getTracks().forEach(track => track.stop());
+  if (video.srcObject) {
+    video.srcObject.getTracks().forEach(t => t.stop());
   }
-  
-  const constraints = {
-    video: {
-      facingMode: currentFacingMode,
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-      frameRate: { ideal: 30 }
-    },
-    audio: false
-  };
 
   try {
-    currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-    video.srcObject = currentStream;
-    video.setAttribute("playsinline", true);
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: currentFacingMode }, width: { ideal: 1280 } },
+      audio: false
+    });
+    video.srcObject = stream;
     video.play();
-    
     video.onloadedmetadata = () => {
       canvasEl.width = video.videoWidth;
       canvasEl.height = video.videoHeight;
-      isCameraRunning = true;
-      requestAnimationFrame(processFrame);
+      document.getElementById('stateDot').classList.add('active');
+      document.getElementById('stateText').textContent = "Scanning Active";
+      requestAnimationFrame(renderLoop);
     };
-    updateStatus("กล้องกำลังทำงาน... (Camera active)", "active");
   } catch (err) {
-    console.error("Camera fail: ", err);
-    updateStatus("ไม่พบกล้อง (No Back Camera Detected. Please grant Permission)", "error");
+    document.getElementById('stateText').textContent = "Camera Error: " + err.message;
   }
 }
 
-// -------------------------------------------------------------
-// Core Computer Vision loop & marker isolation
-// -------------------------------------------------------------
-function processFrame() {
-  if (!isCameraRunning || scanPaused) return;
+// Main Scan Loop
+function renderLoop() {
+  if (!video.videoWidth) return;
 
-  // Draw current webcam image to visualization screen
+  // Render raw feed to visible canvas
   ctx.drawImage(video, 0, 0, canvasEl.width, canvasEl.height);
 
-  if (openCvReady) {
-    try {
-      let src = cv.imread(canvasEl);
-      let gray = new cv.Mat();
-      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-
-      // Blur to reduce small noise
-      let blurred = new cv.Mat();
-      let ksize = new cv.Size(5, 5);
-      cv.GaussianBlur(gray, blurred, ksize, 0);
-
-      // Adaptive threshold for contrast isolate
-      let thresh = new cv.Mat();
-      cv.adaptiveThreshold(blurred, thresh, 255, cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY_INV, 11, 2);
-
-      // Isolate contour boundaries
-      let contours = new cv.MatVector();
-      let hierarchy = new cv.Mat();
-      cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-
-      let cornerCandidates = [];
-
-      for (let i = 0; i < contours.size(); ++i) {
-        let cnt = contours.get(i);
-        let perimeter = cv.arcLength(cnt, true);
-        let approx = new cv.Mat();
-        cv.approxPolyDP(cnt, approx, 0.04 * perimeter, true);
-
-        // Target: Small 4-sided corner marker square
-        if (approx.rows === 4) {
-          let rect = cv.boundingRect(approx);
-          let area = rect.width * rect.height;
-          let aspectRatio = rect.width / rect.height;
-
-          // Fit square dimensions on mobile view resolution
-          if (area > 300 && area < 6000 && aspectRatio > 0.75 && aspectRatio < 1.25) {
-            // Find centroid
-            let mom = cv.moments(cnt, false);
-            if (mom.m00 !== 0) {
-              let cx = Math.round(mom.m10 / mom.m00);
-              let cy = Math.round(mom.m01 / mom.m00);
-              cornerCandidates.push({ cx, cy, area });
-              
-              // Highlight detected markers
-              ctx.strokeStyle = "#ff0055";
-              ctx.lineWidth = 4;
-              ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
-            }
-          }
-        }
-        cnt.delete();
-        approx.delete();
-      }
-
-      // Match targets to the corner markers on the sheet
-      if (cornerCandidates.length >= 4) {
-        let alignedCorners = identifyTargetQuadrilateral(cornerCandidates, canvasEl.width, canvasEl.height);
-        
-        if (alignedCorners) {
-          drawAlignmentOverlay(alignedCorners);
-          warpAndGrade(src, alignedCorners);
-        } else {
-          hideOverlay();
-        }
-      } else {
-        hideOverlay();
-      }
-
-      // Cleanup matrices
-      src.delete(); gray.delete(); blurred.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
-    } catch (e) {
-      console.error("OCV Error: ", e);
-    }
+  if (openCvReady && isScanningActive) {
+    // Render downscaled image for fast, predictable CV processing
+    procCtx.drawImage(video, 0, 0, PROC_W, PROC_H);
+    detectAndProcessSheet();
   }
 
-  requestAnimationFrame(processFrame);
+  requestAnimationFrame(renderLoop);
 }
 
-// Maps detected coordinates into clockwise corners
-function identifyTargetQuadrilateral(pts, frameW, frameH) {
-  // Discard spatial clusters
-  pts.sort((a, b) => b.area - a.area);
-  let uniques = [];
-  let minDistance = 50;
+function detectAndProcessSheet() {
+  try {
+    let src = cv.imread(procCanvas);
+    let gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
-  for (let pt of pts) {
-    if (uniques.length >= 8) break;
-    let distOk = true;
-    for (let u of uniques) {
-      let d = Math.hypot(pt.cx - u.cx, pt.cy - u.cy);
-      if (d < minDistance) { distOk = false; break; }
+    let thresh = new cv.Mat();
+    // Strong binary threshold to isolate black markers from white paper
+    cv.threshold(gray, thresh, 80, 255, cv.THRESH_BINARY_INV);
+
+    let contours = new cv.MatVector();
+    let hierarchy = new cv.Mat();
+    cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+    let scaleX = canvasEl.width / PROC_W;
+    let scaleY = canvasEl.height / PROC_H;
+    let markers = [];
+
+    for (let i = 0; i < contours.size(); ++i) {
+      let cnt = contours.get(i);
+      let rect = cv.boundingRect(cnt);
+      let area = rect.width * rect.height;
+      let ratio = rect.width / rect.height;
+
+      // In a 640x480 frame, the 28-40px marker will have an area between 120 and 4500
+      if (area > 120 && area < 4500 && ratio > 0.65 && ratio < 1.45) {
+        let extent = cv.contourArea(cnt) / area;
+        if (extent > 0.65) { // Marker should be predominantly solid
+          markers.push({
+            x: (rect.x + rect.width / 2) * scaleX,
+            y: (rect.y + rect.height / 2) * scaleY,
+            w: rect.width * scaleX,
+            h: rect.height * scaleY
+          });
+
+          // Draw real-time green box on the live camera screen over recognized markers
+          ctx.strokeStyle = "#10b981";
+          ctx.lineWidth = 3;
+          ctx.strokeRect(rect.x * scaleX, rect.y * scaleY, rect.width * scaleX, rect.height * scaleY);
+        }
+      }
+      cnt.delete();
     }
-    if (distOk) uniques.push(pt);
+
+    document.getElementById('stateText').textContent = `Markers found: ${markers.length}/4`;
+
+    if (markers.length >= 4) {
+      let corners = sortCorners(markers);
+      if (corners) {
+        // Draw sheet boundary
+        ctx.strokeStyle = "#34d399";
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(corners.tl.x, corners.tl.y);
+        ctx.lineTo(corners.tr.x, corners.tr.y);
+        ctx.lineTo(corners.br.x, corners.br.y);
+        ctx.lineTo(corners.bl.x, corners.bl.y);
+        ctx.closePath();
+        ctx.stroke();
+
+        warpAndScore(src, corners);
+      }
+    }
+
+    src.delete(); gray.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
+  } catch (err) {
+    console.error(err);
   }
+}
 
-  if (uniques.length < 4) return null;
+function sortCorners(pts) {
+  if (pts.length < 4) return null;
 
-  // Topological assignment
-  let tl = uniques.reduce((prev, curr) => (curr.cx + curr.cy < prev.cx + prev.cy) ? curr : prev);
-  let tr = uniques.reduce((prev, curr) => (curr.cx - curr.cy > prev.cx - prev.cy) ? curr : prev);
-  let br = uniques.reduce((prev, curr) => (curr.cx + curr.cy > prev.cx + prev.cy) ? curr : prev);
-  let bl = uniques.reduce((prev, curr) => (curr.cx - curr.cy < prev.cx - prev.cy) ? curr : prev);
+  // Filter out any duplicates that are too close together
+  let cleaned = [];
+  for (let p of pts) {
+    if (!cleaned.some(c => Math.hypot(p.x - c.x, p.y - c.y) < 40)) {
+      cleaned.push(p);
+    }
+  }
+  if (cleaned.length < 4) return null;
 
-  // Cross checks
-  if (Math.hypot(tl.cx - tr.cx, tl.cy - tr.cy) < 150) return null;
-  if (Math.hypot(bl.cx - br.cx, bl.cy - br.cy) < 150) return null;
+  // Sort by top-left, top-right, bottom-right, bottom-left
+  cleaned.sort((a, b) => a.y - b.y);
+  let topTwo = [cleaned[0], cleaned[1]].sort((a, b) => a.x - b.x);
+  let bottomTwo = [cleaned[cleaned.length - 2], cleaned[cleaned.length - 1]].sort((a, b) => a.x - b.x);
+
+  let tl = topTwo[0];
+  let tr = topTwo[1];
+  let bl = bottomTwo[0];
+  let br = bottomTwo[1];
+
+  // Geometric validity checks
+  if (Math.abs(tl.x - tr.x) < 100 || Math.abs(bl.x - br.x) < 100) return null;
+  if (Math.abs(tl.y - bl.y) < 120 || Math.abs(tr.y - br.y) < 120) return null;
 
   return { tl, tr, br, bl };
 }
 
-function drawAlignmentOverlay(corn) {
-  ctx.beginPath();
-  ctx.moveTo(corn.tl.cx, corn.tl.cy);
-  ctx.lineTo(corn.tr.cx, corn.tr.cy);
-  ctx.lineTo(corn.br.cx, corn.br.cy);
-  ctx.lineTo(corn.bl.cx, corn.bl.cy);
-  ctx.closePath();
-  ctx.strokeStyle = "#10b981";
-  ctx.lineWidth = 5;
-  ctx.stroke();
-
-  ctx.fillStyle = "#10b981";
-  ctx.font = "bold 14px sans-serif";
-  ctx.fillText("✓ ตรวจพบกระดาษคำตอบ (Answer Sheet Detected)", corn.tl.cx, corn.tl.cy - 10);
-}
-
-// -------------------------------------------------------------
-// Aligns paper skew and grades the correct answers
-// -------------------------------------------------------------
-function warpAndGrade(srcMat, corners) {
-  let warpedDest = new cv.Mat();
-  let dsize = new cv.Size(tempCanvas.width, tempCanvas.height);
+function warpAndScore(srcMat, corners) {
+  let scaleX = PROC_W / canvasEl.width;
+  let scaleY = PROC_H / canvasEl.height;
 
   let srcCoords = cv.matFromArray(4, 1, cv.CV_32FC2, [
-    corners.tl.cx, corners.tl.cy,
-    corners.tr.cx, corners.tr.cy,
-    corners.br.cx, corners.br.cy,
-    corners.bl.cx, corners.bl.cy
+    corners.tl.x * scaleX, corners.tl.y * scaleY,
+    corners.tr.x * scaleX, corners.tr.y * scaleY,
+    corners.br.x * scaleX, corners.br.y * scaleY,
+    corners.bl.x * scaleX, corners.bl.y * scaleY
   ]);
 
   let destCoords = cv.matFromArray(4, 1, cv.CV_32FC2, [
-    12, 12,                  // corner marker center bounds
+    12, 12,
     494, 12,
     494, 714,
     12, 714
   ]);
 
-  let transformMatrix = cv.getPerspectiveTransform(srcCoords, destCoords);
-  cv.warpPerspective(srcMat, warpedDest, transformMatrix, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+  let dsize = new cv.Size(tempCanvas.width, tempCanvas.height);
+  let warped = new cv.Mat();
+  let M = cv.getPerspectiveTransform(srcCoords, destCoords);
+  cv.warpPerspective(srcMat, warped, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
 
-  cv.imshow('hiddenWarpedCanvas', warpedDest);
+  cv.imshow('hiddenWarpedCanvas', warped);
+  evaluateGrading();
 
-  // Grade the flattened image
-  runGradeEvaluator();
-
-  // Cleanup OpenCV objects
-  warpedDest.delete(); srcCoords.delete(); destCoords.delete(); transformMatrix.delete();
+  warped.delete(); srcCoords.delete(); destCoords.delete(); M.delete();
 }
 
-function runGradeEvaluator() {
+function evaluateGrading() {
   let score = 0;
-  
   for (let q = 1; q <= TOTAL_QUESTIONS; q++) {
     const item = BUBBLE_COORDINATES[q];
-    const itemGrades = [];
+    let densities = [];
 
     OPTIONS.forEach(opt => {
-      const cx = item.options[opt];
-      const cy = item.centerY;
-
-      // Extract raw image pixels centered around target coordinates
-      const val = measureBoxDensity(cx, cy, 6, 6);
-      itemGrades.push({ opt, density: val });
+      let cx = item.options[opt];
+      let cy = item.centerY;
+      let d = getSampleDarkness(cx, cy);
+      densities.push({ opt, d });
     });
 
-    itemGrades.sort((a, b) => b.density - a.density);
+    densities.sort((a, b) => b.d - a.d);
 
-    const matchOne = itemGrades[0];
-    const matchTwo = itemGrades[1];
-
-    let detectedOption = null;
-    // Require substantial contrast against adjacent cells
-    if (matchOne.density > 75 && (matchOne.density - matchTwo.density) >= 28) {
-      detectedOption = matchOne.opt;
+    let chosen = null;
+    // Mark must be darker than threshold and notably darker than neighboring options
+    if (densities[0].d > 70 && (densities[0].d - densities[1].d) >= 22) {
+      chosen = densities[0].opt;
     }
 
-    if (detectedOption === ANSWER_KEY[q]) {
-      score++;
-    }
+    if (chosen === ANSWER_KEY[q]) score++;
   }
 
-  // Display success card overlay on camera stream
-  const percent = ((score / TOTAL_QUESTIONS) * 100).toFixed(0);
+  // Display results
+  isScanningActive = false; // Pause scanner to prevent flicker once graded
+  let pct = ((score / TOTAL_QUESTIONS) * 100).toFixed(0);
+  document.getElementById('gradeScoreText').textContent = `${score} / ${TOTAL_QUESTIONS}`;
+  document.getElementById('gradePercentText').textContent = `${pct}% ${pct >= 50 ? '🎉 Passed' : '❌ Failed'}`;
   document.getElementById('gradeOverlay').style.display = 'block';
-  document.getElementById('gradeScoreText').innerHTML = `คะแนน: ${score} / ${TOTAL_QUESTIONS}`;
-  document.getElementById('gradePercentText').innerHTML = `ได้: ${percent}% ${percent >= 50 ? '🎉 ผ่าน (Passed)' : '❌ ไม่ผ่าน (Failed)'}`;
 }
 
-function hideOverlay() {
+function getSampleDarkness(cx, cy) {
+  let imgData = tempCtx.getImageData(cx - 3, cy - 3, 6, 6).data;
+  let dark = 0;
+  for (let i = 0; i < imgData.length; i += 4) {
+    dark += (255 - imgData[i]); // Red-channel green-dropout
+  }
+  return dark / (imgData.length / 4);
+}
+
+function dismissResult() {
   document.getElementById('gradeOverlay').style.display = 'none';
+  isScanningActive = true;
 }
 
-function measureBoxDensity(cx, cy, w = 6, h = 6) {
-  const hw = Math.floor(w / 2);
-  const hh = Math.floor(h / 2);
-  let pixelData;
-  try {
-    pixelData = tempCtx.getImageData(cx - hw, cy - hh, w, h).data;
-  } catch (err) {
-    return 0;
-  }
+// Manual force scan button (takes the active view and evaluates directly)
+document.getElementById('manualSnapBtn').addEventListener('click', () => {
+  tempCtx.drawImage(canvasEl, 0, 0, tempCanvas.width, tempCanvas.height);
+  evaluateGrading();
+});
 
-  let totalWeight = 0;
-  let len = pixelData.length;
+// UI Event Handlers
+document.getElementById('toggleCameraBtn').addEventListener('click', () => {
+  currentFacingMode = (currentFacingMode === "environment") ? "user" : "environment";
+  startCamera();
+});
 
-  for (let i = 0; i < len; i += 4) {
-    const r = pixelData[i];
-    // Isolation targeting graphite absorption relative to the white page background
-    totalWeight += (255 - r);
-  }
-  return totalWeight / (len / 4);
-}
-
-// -------------------------------------------------------------
-// Interactive UI, Settings & Setup Modals
-// -------------------------------------------------------------
 function buildKeyGrid() {
   const grid = document.getElementById('keyGrid');
   grid.innerHTML = '';
@@ -484,7 +410,7 @@ function buildKeyGrid() {
       btns += `<button class="${active}" onclick="updateKey(${q}, '${opt}')">${opt}</button>`;
     });
     btns += `</div>`;
-    row.innerHTML = `<span><b>Q${q}</b></span> ${btns}`;
+    row.innerHTML = `<span><b>${q}.</b></span> ${btns}`;
     grid.appendChild(row);
   }
 }
@@ -499,38 +425,23 @@ function updateKey(q, opt) {
 function applyQuickKey() {
   const input = document.getElementById('quickKeyInput').value.trim().toUpperCase();
   if (input.length !== 60) {
-    alert("กรุณากรอกตัวอักษรเฉลยให้ครบ 60 ตัวอักษร (A-E) เท่านั้น");
+    alert("Please enter exactly 60 characters (A-E).");
     return;
   }
   for (let i = 0; i < 60; i++) {
-    const char = input[i];
-    if (OPTIONS.includes(char)) {
-      ANSWER_KEY[i+1] = char;
-    }
+    if (OPTIONS.includes(input[i])) ANSWER_KEY[i+1] = input[i];
   }
   localStorage.setItem('omr_key_60', JSON.stringify(ANSWER_KEY));
   buildKeyGrid();
-  alert("บันทึกเฉลยเรียบร้อย!");
+  alert("Answer key saved!");
 }
 
 document.getElementById('openKeyBtn').addEventListener('click', () => {
   document.getElementById('keyPanel').style.display = 'flex';
   buildKeyGrid();
 });
-
 document.getElementById('closeKeyBtn').addEventListener('click', () => {
   document.getElementById('keyPanel').style.display = 'none';
-});
-
-document.getElementById('toggleCameraBtn').addEventListener('click', () => {
-  currentFacingMode = (currentFacingMode === "environment") ? "user" : "environment";
-  startCamera();
-});
-
-document.getElementById('pauseScanBtn').addEventListener('click', (e) => {
-  scanPaused = !scanPaused;
-  e.target.textContent = scanPaused ? "Resume" : "Freeze";
-  if (!scanPaused) requestAnimationFrame(processFrame);
 });
 </script>
 
