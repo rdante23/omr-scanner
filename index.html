@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <title>Live 60-Item OMR Camera Scanner</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0; padding: 0; background: #0f172a; color: #f8fafc;
+      display: flex; flex-direction: column; min-height: 100vh;
+    }
+    .header {
+      padding: 12px; background: #1e293b; text-align: center; border-bottom: 1px solid #334155;
+    }
+    h2 { margin: 0 0 4px 0; font-size: 1.25rem; color: #34d399; }
+    p { margin: 0; font-size: 0.85rem; color: #94a3b8; }
+    
+    .scanner-container {
+      position: relative; width: 100%; max-width: 540px; margin: 0 auto; flex: 1;
+      display: flex; flex-direction: column; justify-content: flex-start;
+    }
+    video { display: none; } /* Hidden, we read frame data via RequestAnimationFrame */
+    canvas#interactiveCanvas {
+      width: 100%; height: auto; display: block; border-bottom: 4px solid #10b981;
+    }
+    
+    .status-overlay {
+      position: absolute; top: 10px; left: 10px; right: 10px;
+      padding: 8px 12px; background: rgba(15, 23, 42, 0.85); border-radius: 6px;
+      border: 1px solid #334155; font-size: 0.85rem; font-weight: bold;
+      display: flex; justify-content: space-between; align-items: center; z-index: 10;
+    }
+    .status-indicator { display: inline-flex; align-items: center; gap: 6px; }
+    .pulse-dot { width: 8px; height: 8px; background: #ef4444; border-radius: 50%; }
+    .pulse-dot.active { background: #10b981; animation: pulse 1.5s infinite; }
+    
+    @keyframes pulse {
+      0% { transform: scale(0.9); opacity: 0.5; }
+      50% { transform: scale(1.1); opacity: 1; }
+      100% { transform: scale(0.9); opacity: 0.5; }
+    }
+
+    .live-grade-overlay {
+      position: absolute; bottom: 80px; left: 10px; right: 10px;
+      background: rgba(16, 185, 129, 0.95); color: #ffffff;
+      padding: 14px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      backdrop-filter: blur(4px); text-align: center; border: 1px solid #34d399;
+      display: none; z-index: 20;
+    }
+    .grade-score { font-size: 2rem; font-weight: 800; line-height: 1; margin-bottom: 4px; }
+    .grade-percent { font-size: 0.9rem; font-weight: 500; opacity: 0.9; }
+
+    .controls-footer {
+      padding: 12px; background: #1e293b; display: flex; gap: 8px; justify-content: center;
+    }
+    .btn {
+      background: #10b981; color: white; border: none; padding: 10px 16px;
+      border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.9rem;
+    }
+    .btn:hover { background: #059669; }
+    .btn-sec { background: #475569; }
+    .btn-sec:hover { background: #334155; }
+
+    /* Hide OMR key drawer */
+    #keyPanel {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #0f172a;
+      z-index: 100; display: none; flex-direction: column; padding: 16px;
+    }
+    .key-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; overflow-y: auto; flex: 1; margin: 12px 0;
+    }
+    .key-row {
+      display: flex; align-items: center; justify-content: space-between;
+      background: #1e293b; padding: 6px; border-radius: 4px; font-size: 0.85rem;
+    }
+    .key-btns button {
+      width: 20px; height: 20px; border: 1px solid #64748b; background: #334155; color: #fff;
+      border-radius: 3px; cursor: pointer; margin-left: 1px; font-size: 0.7rem; font-weight: bold;
+    }
+    .key-btns button.active { background: #10b981; border-color: #10b981; }
+
+    /* For capturing snapshot */
+    #hiddenWarpedCanvas { display: none; }
+  </style>
+
+  <!-- Load OpenCV.js (WebAssembly) from unpkg CDN for high-speed live image processing -->
+  <script async src="https://unpkg.com/opencv.js@4.5.5/opencv.js" onload="onOpenCvReady()"></script>
+</head>
+<body>
+
+  <div class="header">
+    <h2>60-Item Live OMR Scanner</h2>
+    <p>จัดแนวเครื่องหมาย 4 มุมในกรอบเพื่อตรวจคำตอบ (Align the 4 corner markers to scan)</p>
+  </div>
+
+  <div class="scanner-container">
+    <!-- Overlay banner tracking camera & alignment state -->
+    <div class="status-overlay">
+      <div class="status-indicator">
+        <div class="pulse-dot" id="stateDot"></div>
+        <span id="stateText">Loading Computer Vision...</span>
+      </div>
+      <button class="btn btn-sec" style="font-size:0.75rem; padding: 4px 8px;" id="toggleCameraBtn">สลับกล้อง</button>
+    </div>
+
+    <!-- Live overlay showing calculated grade -->
+    <div class="live-grade-overlay" id="gradeOverlay">
+      <div class="grade-score" id="gradeScoreText">45/60</div>
+      <div class="grade-percent" id="gradePercentText">75% (ผ่าน / Passed)</div>
+      <div style="font-size: 0.7rem; margin-top: 4px; opacity: 0.8;">ดึงกล้องออกเพื่อเคลียร์ / Remove camera to clear</div>
+    </div>
+
+    <!-- Camera stream sources -->
+    <video id="videoElement" autoplay playsinline muted></video>
+    
+    <!-- Render canvas with interactive guide overlays -->
+    <canvas id="interactiveCanvas"></canvas>
+    
+    <!-- Virtual coordinate calibration reference (Internal) -->
+    <canvas id="hiddenWarpedCanvas" width="520" height="740"></canvas>
+  </div>
+
+  <div class="controls-footer">
+    <button class="btn" id="openKeyBtn">แก้ไขเฉลย (Answer Key)</button>
+    <button class="btn btn-sec" id="pauseScanBtn">Freeze</button>
+  </div>
+
+  <!-- Modal panel to adjust correct Answer Key -->
+  <div id="keyPanel">
+    <h3 style="margin-top:0;">ตั้งค่าเฉลย (Answer Key)</h3>
+    <input type="text" id="quickKeyInput" placeholder="พาสท์เฉลย 60 ตัวอักษร เช่น ABCDE..." style="width:100%; padding:8px; margin-bottom:8px; border-radius:4px; border:1px solid #475569; background:#1e293b; color:white;">
+    <div style="display:flex; gap:8px;">
+      <button class="btn" onclick="applyQuickKey()">บันทึกพาสท์เร็ว (Save Quick String)</button>
+    </div>
+    <div class="key-grid" id="keyGrid"></div>
+    <button class="btn" style="width:100%; margin-top:8px;" id="closeKeyBtn">เสร็จสิ้น (Done)</button>
+  </div>
+
+<script>
+let video = document.getElementById('videoElement');
+let canvasEl = document.getElementById('interactiveCanvas');
+let ctx = canvasEl.getContext('2d');
+let tempCanvas = document.getElementById('hiddenWarpedCanvas');
+let tempCtx = tempCanvas.getContext('2d');
+
+let isCameraRunning = false;
+let openCvReady = false;
+let currentStream = null;
+let currentFacingMode = "environment"; // default is back-facing camera
+let scanPaused = false;
+let trackingData = { detected: false, corners: [] };
+
+// 60-Item coordinates map (Same math as A5 Sheet specs)
+const TOTAL_QUESTIONS = 60;
+const OPTIONS = ['A', 'B', 'C', 'D', 'E'];
+const ITEMS_PER_COL = 15;
+const COL_X = [20, 145, 270, 395];
+const TOP_Y = 96;
+const HEADER_H = 24;
+const ROW_H = 35;
+const OPT_OFFSET_X = 20;
+const OPT_STEP_X = 16;
+const BOX_CENTER_Y_OFFSET = 17;
+
+const BUBBLE_COORDINATES = {};
+for (let q = 1; q <= TOTAL_QUESTIONS; q++) {
+  const colIndex = Math.floor((q - 1) / ITEMS_PER_COL);
+  const rowIndex = (q - 1) % ITEMS_PER_COL;
+  const baseColX = COL_X[colIndex];
+  const centerY = TOP_Y + HEADER_H + (rowIndex * ROW_H) + BOX_CENTER_Y_OFFSET;
+
+  BUBBLE_COORDINATES[q] = {
+    centerY: centerY,
+    options: {}
+  };
+  OPTIONS.forEach((opt, idx) => {
+    BUBBLE_COORDINATES[q].options[opt] = baseColX + OPT_OFFSET_X + (idx * OPT_STEP_X) + 6.5; 
+  });
+}
+
+// Answer Key state with persist memory
+let ANSWER_KEY = JSON.parse(localStorage.getItem('omr_key_60') || '{}');
+if (Object.keys(ANSWER_KEY).length === 0) {
+  for (let i = 1; i <= TOTAL_QUESTIONS; i++) {
+    ANSWER_KEY[i] = OPTIONS[(i - 1) % 5];
+  }
+}
+
+function onOpenCvReady() {
+  openCvReady = true;
+  updateStatus("พร้อมใช้งาน - กรุณาเปิดกล้อง", "active");
+  startCamera();
+}
+
+function updateStatus(msg, state) {
+  document.getElementById('stateText').textContent = msg;
+  const dot = document.getElementById('stateDot');
+  if (state === "active") {
+    dot.classList.add('active');
+  } else {
+    dot.classList.remove('active');
+  }
+}
+
+// Starts or shifts real-time high frame camera feed
+async function startCamera() {
+  if (currentStream) {
+    currentStream.getTracks().forEach(track => track.stop());
+  }
+  
+  const constraints = {
+    video: {
+      facingMode: currentFacingMode,
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      frameRate: { ideal: 30 }
+    },
+    audio: false
+  };
+
+  try {
+    currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = currentStream;
+    video.setAttribute("playsinline", true);
+    video.play();
+    
+    video.onloadedmetadata = () => {
+      canvasEl.width = video.videoWidth;
+      canvasEl.height = video.videoHeight;
+      isCameraRunning = true;
+      requestAnimationFrame(processFrame);
+    };
+    updateStatus("กล้องกำลังทำงาน... (Camera active)", "active");
+  } catch (err) {
+    console.error("Camera fail: ", err);
+    updateStatus("ไม่พบกล้อง (No Back Camera Detected. Please grant Permission)", "error");
+  }
+}
+
+// -------------------------------------------------------------
+// Core Computer Vision loop & marker isolation
+// -------------------------------------------------------------
+function processFrame() {
+  if (!isCameraRunning || scanPaused) return;
+
+  // Draw current webcam image to visualization screen
+  ctx.drawImage(video, 0, 0, canvasEl.width, canvasEl.height);
+
+  if (openCvReady) {
+    try {
+      let src = cv.imread(canvasEl);
+      let gray = new cv.Mat();
+      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+      // Blur to reduce small noise
+      let blurred = new cv.Mat();
+      let ksize = new cv.Size(5, 5);
+      cv.GaussianBlur(gray, blurred, ksize, 0);
+
+      // Adaptive threshold for contrast isolate
+      let thresh = new cv.Mat();
+      cv.adaptiveThreshold(blurred, thresh, 255, cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY_INV, 11, 2);
+
+      // Isolate contour boundaries
+      let contours = new cv.MatVector();
+      let hierarchy = new cv.Mat();
+      cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+      let cornerCandidates = [];
+
+      for (let i = 0; i < contours.size(); ++i) {
+        let cnt = contours.get(i);
+        let perimeter = cv.arcLength(cnt, true);
+        let approx = new cv.Mat();
+        cv.approxPolyDP(cnt, approx, 0.04 * perimeter, true);
+
+        // Target: Small 4-sided corner marker square
+        if (approx.rows === 4) {
+          let rect = cv.boundingRect(approx);
+          let area = rect.width * rect.height;
+          let aspectRatio = rect.width / rect.height;
+
+          // Fit square dimensions on mobile view resolution
+          if (area > 300 && area < 6000 && aspectRatio > 0.75 && aspectRatio < 1.25) {
+            // Find centroid
+            let mom = cv.moments(cnt, false);
+            if (mom.m00 !== 0) {
+              let cx = Math.round(mom.m10 / mom.m00);
+              let cy = Math.round(mom.m01 / mom.m00);
+              cornerCandidates.push({ cx, cy, area });
+              
+              // Highlight detected markers
+              ctx.strokeStyle = "#ff0055";
+              ctx.lineWidth = 4;
+              ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+            }
+          }
+        }
+        cnt.delete();
+        approx.delete();
+      }
+
+      // Match targets to the corner markers on the sheet
+      if (cornerCandidates.length >= 4) {
+        let alignedCorners = identifyTargetQuadrilateral(cornerCandidates, canvasEl.width, canvasEl.height);
+        
+        if (alignedCorners) {
+          drawAlignmentOverlay(alignedCorners);
+          warpAndGrade(src, alignedCorners);
+        } else {
+          hideOverlay();
+        }
+      } else {
+        hideOverlay();
+      }
+
+      // Cleanup matrices
+      src.delete(); gray.delete(); blurred.delete(); thresh.delete(); contours.delete(); hierarchy.delete();
+    } catch (e) {
+      console.error("OCV Error: ", e);
+    }
+  }
+
+  requestAnimationFrame(processFrame);
+}
+
+// Maps detected coordinates into clockwise corners
+function identifyTargetQuadrilateral(pts, frameW, frameH) {
+  // Discard spatial clusters
+  pts.sort((a, b) => b.area - a.area);
+  let uniques = [];
+  let minDistance = 50;
+
+  for (let pt of pts) {
+    if (uniques.length >= 8) break;
+    let distOk = true;
+    for (let u of uniques) {
+      let d = Math.hypot(pt.cx - u.cx, pt.cy - u.cy);
+      if (d < minDistance) { distOk = false; break; }
+    }
+    if (distOk) uniques.push(pt);
+  }
+
+  if (uniques.length < 4) return null;
+
+  // Topological assignment
+  let tl = uniques.reduce((prev, curr) => (curr.cx + curr.cy < prev.cx + prev.cy) ? curr : prev);
+  let tr = uniques.reduce((prev, curr) => (curr.cx - curr.cy > prev.cx - prev.cy) ? curr : prev);
+  let br = uniques.reduce((prev, curr) => (curr.cx + curr.cy > prev.cx + prev.cy) ? curr : prev);
+  let bl = uniques.reduce((prev, curr) => (curr.cx - curr.cy < prev.cx - prev.cy) ? curr : prev);
+
+  // Cross checks
+  if (Math.hypot(tl.cx - tr.cx, tl.cy - tr.cy) < 150) return null;
+  if (Math.hypot(bl.cx - br.cx, bl.cy - br.cy) < 150) return null;
+
+  return { tl, tr, br, bl };
+}
+
+function drawAlignmentOverlay(corn) {
+  ctx.beginPath();
+  ctx.moveTo(corn.tl.cx, corn.tl.cy);
+  ctx.lineTo(corn.tr.cx, corn.tr.cy);
+  ctx.lineTo(corn.br.cx, corn.br.cy);
+  ctx.lineTo(corn.bl.cx, corn.bl.cy);
+  ctx.closePath();
+  ctx.strokeStyle = "#10b981";
+  ctx.lineWidth = 5;
+  ctx.stroke();
+
+  ctx.fillStyle = "#10b981";
+  ctx.font = "bold 14px sans-serif";
+  ctx.fillText("✓ ตรวจพบกระดาษคำตอบ (Answer Sheet Detected)", corn.tl.cx, corn.tl.cy - 10);
+}
+
+// -------------------------------------------------------------
+// Aligns paper skew and grades the correct answers
+// -------------------------------------------------------------
+function warpAndGrade(srcMat, corners) {
+  let warpedDest = new cv.Mat();
+  let dsize = new cv.Size(tempCanvas.width, tempCanvas.height);
+
+  let srcCoords = cv.matFromArray(4, 1, cv.CV_32FC2, [
+    corners.tl.cx, corners.tl.cy,
+    corners.tr.cx, corners.tr.cy,
+    corners.br.cx, corners.br.cy,
+    corners.bl.cx, corners.bl.cy
+  ]);
+
+  let destCoords = cv.matFromArray(4, 1, cv.CV_32FC2, [
+    12, 12,                  // corner marker center bounds
+    494, 12,
+    494, 714,
+    12, 714
+  ]);
+
+  let transformMatrix = cv.getPerspectiveTransform(srcCoords, destCoords);
+  cv.warpPerspective(srcMat, warpedDest, transformMatrix, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+
+  cv.imshow('hiddenWarpedCanvas', warpedDest);
+
+  // Grade the flattened image
+  runGradeEvaluator();
+
+  // Cleanup OpenCV objects
+  warpedDest.delete(); srcCoords.delete(); destCoords.delete(); transformMatrix.delete();
+}
+
+function runGradeEvaluator() {
+  let score = 0;
+  
+  for (let q = 1; q <= TOTAL_QUESTIONS; q++) {
+    const item = BUBBLE_COORDINATES[q];
+    const itemGrades = [];
+
+    OPTIONS.forEach(opt => {
+      const cx = item.options[opt];
+      const cy = item.centerY;
+
+      // Extract raw image pixels centered around target coordinates
+      const val = measureBoxDensity(cx, cy, 6, 6);
+      itemGrades.push({ opt, density: val });
+    });
+
+    itemGrades.sort((a, b) => b.density - a.density);
+
+    const matchOne = itemGrades[0];
+    const matchTwo = itemGrades[1];
+
+    let detectedOption = null;
+    // Require substantial contrast against adjacent cells
+    if (matchOne.density > 75 && (matchOne.density - matchTwo.density) >= 28) {
+      detectedOption = matchOne.opt;
+    }
+
+    if (detectedOption === ANSWER_KEY[q]) {
+      score++;
+    }
+  }
+
+  // Display success card overlay on camera stream
+  const percent = ((score / TOTAL_QUESTIONS) * 100).toFixed(0);
+  document.getElementById('gradeOverlay').style.display = 'block';
+  document.getElementById('gradeScoreText').innerHTML = `คะแนน: ${score} / ${TOTAL_QUESTIONS}`;
+  document.getElementById('gradePercentText').innerHTML = `ได้: ${percent}% ${percent >= 50 ? '🎉 ผ่าน (Passed)' : '❌ ไม่ผ่าน (Failed)'}`;
+}
+
+function hideOverlay() {
+  document.getElementById('gradeOverlay').style.display = 'none';
+}
+
+function measureBoxDensity(cx, cy, w = 6, h = 6) {
+  const hw = Math.floor(w / 2);
+  const hh = Math.floor(h / 2);
+  let pixelData;
+  try {
+    pixelData = tempCtx.getImageData(cx - hw, cy - hh, w, h).data;
+  } catch (err) {
+    return 0;
+  }
+
+  let totalWeight = 0;
+  let len = pixelData.length;
+
+  for (let i = 0; i < len; i += 4) {
+    const r = pixelData[i];
+    // Isolation targeting graphite absorption relative to the white page background
+    totalWeight += (255 - r);
+  }
+  return totalWeight / (len / 4);
+}
+
+// -------------------------------------------------------------
+// Interactive UI, Settings & Setup Modals
+// -------------------------------------------------------------
+function buildKeyGrid() {
+  const grid = document.getElementById('keyGrid');
+  grid.innerHTML = '';
+  for (let q = 1; q <= TOTAL_QUESTIONS; q++) {
+    const row = document.createElement('div');
+    row.className = 'key-row';
+    let btns = `<div class="key-btns" data-q="${q}">`;
+    OPTIONS.forEach(opt => {
+      const active = (ANSWER_KEY[q] === opt) ? 'active' : '';
+      btns += `<button class="${active}" onclick="updateKey(${q}, '${opt}')">${opt}</button>`;
+    });
+    btns += `</div>`;
+    row.innerHTML = `<span><b>Q${q}</b></span> ${btns}`;
+    grid.appendChild(row);
+  }
+}
+
+function updateKey(q, opt) {
+  ANSWER_KEY[q] = opt;
+  localStorage.setItem('omr_key_60', JSON.stringify(ANSWER_KEY));
+  const el = document.querySelector(`.key-btns[data-q="${q}"]`);
+  el.querySelectorAll('button').forEach(btn => btn.classList.toggle('active', btn.textContent === opt));
+}
+
+function applyQuickKey() {
+  const input = document.getElementById('quickKeyInput').value.trim().toUpperCase();
+  if (input.length !== 60) {
+    alert("กรุณากรอกตัวอักษรเฉลยให้ครบ 60 ตัวอักษร (A-E) เท่านั้น");
+    return;
+  }
+  for (let i = 0; i < 60; i++) {
+    const char = input[i];
+    if (OPTIONS.includes(char)) {
+      ANSWER_KEY[i+1] = char;
+    }
+  }
+  localStorage.setItem('omr_key_60', JSON.stringify(ANSWER_KEY));
+  buildKeyGrid();
+  alert("บันทึกเฉลยเรียบร้อย!");
+}
+
+document.getElementById('openKeyBtn').addEventListener('click', () => {
+  document.getElementById('keyPanel').style.display = 'flex';
+  buildKeyGrid();
+});
+
+document.getElementById('closeKeyBtn').addEventListener('click', () => {
+  document.getElementById('keyPanel').style.display = 'none';
+});
+
+document.getElementById('toggleCameraBtn').addEventListener('click', () => {
+  currentFacingMode = (currentFacingMode === "environment") ? "user" : "environment";
+  startCamera();
+});
+
+document.getElementById('pauseScanBtn').addEventListener('click', (e) => {
+  scanPaused = !scanPaused;
+  e.target.textContent = scanPaused ? "Resume" : "Freeze";
+  if (!scanPaused) requestAnimationFrame(processFrame);
+});
+</script>
+
+</body>
+</html>
